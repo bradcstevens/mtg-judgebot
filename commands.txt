@@ -1,3 +1,0 @@
-git remote add origin https://github.com/mtrevin93/azorius.git
-git branch -M main
-git push -u origin main
