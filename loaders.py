@@ -57,7 +57,7 @@ def process_cards(file_path: str) -> List[Dict]:
             # 'reprint': card.get('reprint'),
             # 'variation': card.get('variation'),
             # 'set_id': card.get('set_id'),
-            'set': card.get('set'),
+            # 'set': card.get('set'),
             'set_name': card.get('set_name'),
             # 'set_type': card.get('set_type'),
             # 'set_uri': card.get('set_uri'),
