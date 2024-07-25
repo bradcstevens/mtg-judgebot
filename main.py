@@ -20,14 +20,17 @@ def main():
     print(f"Total rule chunks processed: {len(rules)}")
     print(f"Total glossary chunks processed: {len(glossary)}")
 
-    # print("\nFirst card:")
-    # pprint(cards[0])
+    print("\nFirst card:")
+    pprint(cards[:10])
 
-    # print("\nFirst ruling:")
-    # pprint(rulings[0])
+    print("\nFirst rules:")
+    pprint(rules[:10])
+
+    print("\nFirst ruling:")
+    pprint(rulings[:10])
 
     print("\nFirst rule chunk:")
-    pprint(glossary[:1000])
+    pprint(glossary[:10])
 
 if __name__ == "__main__":
     main()
