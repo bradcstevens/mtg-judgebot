@@ -4,3 +4,4 @@ official-rules.txt
 commands.txt
 glossary.txt
 *pycache*
+.env.local
