@@ -1,75 +1,39 @@
-from typing import Dict, List
-from json_loader import json_loader
+from typing import List, Dict, Any
+from oracle_text_processor import process_oracle_text
+from ruling_processor import process_rulings
 
-def metadata_func(record: dict) -> dict:
-    return {
-            # 'id': record.get('id'),
-            'oracle_id': record.get('oracle_id'),
-            # 'multiverse_ids': record.get('multiverse_ids'),
-            # 'mtgo_id': record.get('mtgo_id'),
-            # 'mtgo_foil_id': record.get('mtgo_foil_id'),
-            # 'tcgplayer_id': record.get('tcgplayer_id'),
-            # 'recordmarket_id': record.get('recordmarket_id'),
-            'name': record.get('name'),
-            # 'lang': record.get('lang'),
-            'released_at': record.get('released_at'),
-            # 'uri': record.get('uri'),
-            # 'scryfall_uri': record.get('scryfall_uri'),
-            # 'layout': record.get('layout'),
-            # 'highres_image': record.get('highres_image'),
-            # 'image_status': record.get('image_status'),
-            # 'image_uris': record.get('image_uris'),
-            'mana_cost': record.get('mana_cost'),
-            'cmc': record.get('cmc'),
-            'type_line': record.get('type_line'),
-            'oracle_text': record.get('oracle_text'),
-            'power': record.get('power'),
-            'toughness': record.get('toughness'),
-            'colors': record.get('colors'),
-            'color_identity': record.get('color_identity'),
-            'keywords': record.get('keywords'),
-            'legalities': record.get('legalities'),
-            'games': record.get('games'),
-            # 'reserved': record.get('reserved'),
-            # 'foil': record.get('foil'),
-            # 'nonfoil': record.get('nonfoil'),
-            # 'finishes': record.get('finishes'),
-            # 'oversized': record.get('oversized'),
-            # 'promo': record.get('promo'),
-            # 'reprint': record.get('reprint'),
-            # 'variation': record.get('variation'),
-            # 'set_id': record.get('set_id'),
-            # 'set': record.get('set'),
-            'set_name': record.get('set_name'),
-            # 'set_type': record.get('set_type'),
-            # 'set_uri': record.get('set_uri'),
-            # 'set_search_uri': record.get('set_search_uri'),
-            # 'scryfall_set_uri': record.get('scryfall_set_uri'),
-            # 'rulings_uri': record.get('rulings_uri'),
-            # 'prints_search_uri': record.get('prints_search_uri'),
-            # 'collector_number': record.get('collector_number'),
-            # 'digital': record.get('digital'),
-            # 'rarity': record.get('rarity'),
-            # 'flavor_text': record.get('flavor_text'),
-            # 'record_back_id': record.get('record_back_id'),
-            # 'artist': record.get('artist'),
-            # 'artist_ids': record.get('artist_ids'),
-            # 'illustration_id': record.get('illustration_id'),
-            # 'border_color': record.get('border_color'),
-            # 'frame': record.get('frame'),
-            # 'full_art': record.get('full_art'),
-            # 'textless': record.get('textless'),
-            # 'booster': record.get('booster'),
-            # 'story_spotlight': record.get('story_spotlight'),
-            # 'edhrec_rank': record.get('edhrec_rank'),
-            # 'prices': record.get('prices'),
-            # 'related_uris': record.get('related_uris'),
-            # 'purchase_uris': record.get('purchase_uris'),
-    }
+def combine_cards_and_rulings(cards: List[Dict[str, Any]], rulings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    # Create a dictionary to store rulings by oracle_id
+    rulings_by_oracle_id = {}
+    for ruling in rulings:
+        oracle_id = ruling['metadata'].get('oracle_id')
+        if oracle_id:
+            if oracle_id not in rulings_by_oracle_id:
+                rulings_by_oracle_id[oracle_id] = []
+            rulings_by_oracle_id[oracle_id].append(ruling['content'])
 
-def process_cards(file_path: str) -> List[Dict]:
-    return json_loader(
-        file_path=file_path,
-        content_key='oracle_id',
-        metadata_func=metadata_func
-    )
+    # Combine cards with their rulings
+    combined_data = []
+    for card in cards:
+        oracle_id = card['content']
+        card_rulings = rulings_by_oracle_id.get(oracle_id, [])
+        
+        combined_content = f"{card['metadata'].get('name', '')}: {card['metadata'].get('oracle_text', '')}"
+        if card_rulings:
+            combined_content += "\nRulings:\n" + "\n".join(card_rulings)
+        
+        combined_metadata = card['metadata'].copy()
+        combined_metadata['has_rulings'] = bool(card_rulings)
+        combined_metadata['ruling_count'] = len(card_rulings)
+        
+        combined_data.append({
+            'content': combined_content,
+            'metadata': combined_metadata
+        })
+    
+    return combined_data
+
+def process_cards(cards_file_path: str, rulings_file_path: str) -> List[Dict[str, Any]]:
+    cards = process_oracle_text(cards_file_path)
+    rulings = process_rulings(rulings_file_path)
+    return combine_cards_and_rulings(cards, rulings)

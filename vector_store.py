@@ -1,52 +1,47 @@
+# vector_store.py
 from langchain_community.vectorstores import Chroma
 from langchain.schema import Document
 from typing import List, Dict, Any
+import json
 
-def create_documents(data: List[Dict[str, Any]], data_type: str) -> List[Document]:
+def safe_filter_metadata(metadata):
+    if isinstance(metadata, dict):
+        return {k: str(v) for k, v in metadata.items() if not isinstance(v, (list, dict))}
+    elif isinstance(metadata, str):
+        try:
+            parsed = json.loads(metadata)
+            if isinstance(parsed, dict):
+                return safe_filter_metadata(parsed)
+        except json.JSONDecodeError:
+            pass
+    return {}
+
+def create_documents(combined_data: List[Dict[str, Any]]) -> List[Document]:
     documents = []
-    for item in data:
-        if data_type == 'cards':
-            content = f"{item['metadata']['name']}: {item['metadata']['oracle_text']}"
-            metadata = {
-                'oracle_id': item['content'],
-                'name': item['metadata']['name'],
-                'mana_cost': item['metadata'].get('mana_cost', ''),
-                'type_line': item['metadata'].get('type_line', ''),
-                'data_type': data_type
-            }
-        elif data_type == 'rulings':
+    for item in combined_data:
+        if isinstance(item, dict) and 'content' in item and 'metadata' in item:
             content = item['content']
-            metadata = {
-                'oracle_id': item['metadata'].get('oracle_id', ''),
-                'published_at': item['metadata'].get('published_at', ''),
-                'data_type': data_type
-            }
-        elif data_type == 'rules':
-            content = item['content']
-            metadata = {
-                'id': item['id'],
-                'rule_number': item['rule_number'],
-                'base_rule': item['base_rule'],
-                'parent_rule': item['parent_rule'],
-                'data_type': data_type
-            }
-        elif data_type == 'glossary':
-            content = f"{item['term']}: {item['definition']}"
-            metadata = {
-                'id': item['id'],
-                'term': item['term'],
-                'rule_refs': ','.join(item['rule_refs']),
-                'data_type': data_type
-            }
-        else:
-            raise ValueError(f"Unknown data type: {data_type}")
-        
-        documents.append(Document(page_content=content, metadata=metadata))
+            metadata = safe_filter_metadata(item['metadata'])
+            documents.append(Document(page_content=content, metadata=metadata))
     return documents
 
-def create_vector_store(data: List[Dict[str, Any]], embeddings, data_type: str) -> Chroma:
-    documents = create_documents(data, data_type)
-    return Chroma.from_documents(documents, embeddings, collection_name=data_type)
+def create_vector_store(combined_data: List[Dict[str, Any]], embeddings) -> Chroma:
+    documents = create_documents(combined_data)
+    
+    if not documents:
+        raise ValueError("No valid documents created from combined data")
+    
+    batch_size = 5000
+    vector_store = None
+    
+    for i in range(0, len(documents), batch_size):
+        batch = documents[i:i+batch_size]
+        if vector_store is None:
+            vector_store = Chroma.from_documents(batch, embeddings, collection_name="mtg_data")
+        else:
+            vector_store.add_documents(batch)
+    
+    return vector_store
 
-def perform_similarity_search(vector_store: Chroma, query: str, k: int = 1):
+def perform_similarity_search(vector_store: Chroma, query: str, k: int = 3):
     return vector_store.similarity_search(query, k=k)
