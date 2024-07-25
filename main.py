@@ -1,5 +1,4 @@
-# main.py
-from card_processor import process_cards
+from data_processor import process_all_data
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, perform_similarity_search
 from config import load_api_key
@@ -15,11 +14,18 @@ def print_search_results(query, results):
 def main():
     cards_file_path = './data/oracle-cards-20240722210341.json'
     rulings_file_path = './data/rulings-20240722210039.json'
+    rules_file_path = './data/official-rules.txt'
+    glossary_file_path = './data/glossary.txt'
 
-    # Process and combine data
-    combined_data = process_cards(cards_file_path, rulings_file_path)
+    # Process all data
+    combined_data = process_all_data(cards_file_path, rulings_file_path, rules_file_path, glossary_file_path)
     print(f"Total combined entries: {len(combined_data)}")
-    print("Sample combined entry:", combined_data[0])
+    print("Sample entries:")
+    for doc_type in ['card', 'rule', 'glossary']:
+        sample = next((item for item in combined_data if item['metadata']['document_type'] == doc_type), None)
+        if sample:
+            print(f"\nSample {doc_type}:")
+            pprint(sample)
 
     # Load API key and initialize embeddings
     try:
@@ -43,11 +49,11 @@ def main():
     queries = [
         "What are the rulings for first strike?",
         "How does deathtouch interact with other abilities?",
-        "Are there any specific rulings for the card 'Black Lotus'?",
-        "What are the rulings on planeswalker loyalty abilities?",
-        "How do replacement effects work in combat?",
-        "What are the rulings on casting spells for alternative costs?",
-        "How do continuous effects from static abilities interact?"
+        "Explain the rules for casting spells with alternative costs",
+        "What is the definition of 'mana' in Magic: The Gathering?",
+        "How do planeswalker loyalty abilities work according to the rules?",
+        "What are the specific rules for the 'commander' format?",
+        "Explain the concept of 'state-based actions' in Magic: The Gathering",
     ]
 
     for query in queries:
