@@ -56,5 +56,5 @@ def load_vector_store(persist_directory: str, embeddings) -> Chroma:
 def perform_similarity_search(vector_store: Chroma, query: str, k: int = 3):
     return vector_store.similarity_search(query, k=k)
 
-def create_retriever(vector_store: Chroma, search_kwargs: dict = {"k": 3}):
+def create_retriever(vector_store: Chroma, search_kwargs: dict = {"k": 5}):
     return vector_store.as_retriever(search_kwargs=search_kwargs)

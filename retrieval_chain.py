@@ -4,17 +4,16 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough
 
 def create_retrieval_chain(retriever, openai_api_key):
-    template = """Answer the Magic: The Gathering question based only on the following context:
+    template = """Answer the Magic: The Gathering question based on the following context. If the information is not explicitly stated in the context, use your understanding of the game to provide a reasonable answer, but indicate when you're extrapolating beyond the given information.
 
+    Context:
     {context}
 
     Question: {question}
 
-    If the question cannot be answered based solely on the provided context, please respond with "I don't have enough information to answer that question."
-
-    Answer:"""
+    Detailed Answer:"""
     prompt = ChatPromptTemplate.from_template(template)
-    model = ChatOpenAI(api_key=openai_api_key)
+    model = ChatOpenAI(api_key=openai_api_key, temperature=0.7)
 
     def format_docs(docs):
         return "\n\n".join([d.page_content for d in docs])
