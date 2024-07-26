@@ -9,7 +9,7 @@ def print_search_results(query, results):
     print(f"\nSearch query: {query}")
     print("Top 3 results:")
     for i, result in enumerate(results[:3], 1):
-        print(f"{i}. Content: {result.page_content[:500]}...")  # Truncate long content
+        print(f"{i}. Content: {result.page_content[:200]}...")  # Truncate to first 200 characters
         print(f"   Metadata: {result.metadata}\n")
 
 def main():
@@ -61,11 +61,14 @@ def main():
         try:
             # First, let's see what the similarity search returns
             search_results = perform_similarity_search(vector_store, query, k=3)
-            print_search_results(query, search_results)
+            print("Similarity Search Results:")
+            for i, result in enumerate(search_results, 1):
+                print(f"{i}. Content: {result.page_content[:200]}...")  # Print first 200 characters of each result
+                print(f"   Metadata: {result.metadata}\n")
 
             # Now, let's see what the retrieval chain returns
             chain_response = mtg_chain.invoke(query)
-            print("Retrieval Chain Response:")
+            print("\nRetrieval Chain Response:")
             print(chain_response)
         except Exception as e:
             print(f"Error processing query: {e}")
