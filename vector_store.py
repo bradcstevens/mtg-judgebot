@@ -96,7 +96,7 @@ def perform_similarity_search(vector_store, query, k=3):
 
 def create_retriever(vector_store: Chroma, search_kwargs: dict = {"k": 20}):
     default_kwargs = {
-        "score_threshold": 0.95,
+        "score_threshold": 0.7,
         "k": 20
     }
     # Update default_kwargs with any provided search_kwargs

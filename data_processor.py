@@ -47,20 +47,23 @@ def process_glossary_data(glossary: List[Dict[str, Any]]) -> List[Dict[str, Any]
     logger.info(f"Processed {len(processed_glossary)} glossary terms")
     return processed_glossary
 
-def process_all_data(cards_file_path: str, rulings_file_path: str, rules_file_path: str, glossary_file_path: str) -> List[Dict[str, Any]]:
-    combined_data = []
-    
+def process_cards_data(cards_file_path: str, rulings_file_path: str) -> List[Dict[str, Any]]:
     try:
         cards_and_rulings = process_cards_and_rulings(cards_file_path, rulings_file_path)
-        combined_data.extend(cards_and_rulings)
         logger.info(f"Processed {len(cards_and_rulings)} cards and rulings")
+        return cards_and_rulings
     except Exception as e:
         logger.error(f"Error processing cards and rulings: {e}")
+        return []
+
+def process_rules_and_glossary_data(rules_file_path: str, glossary_file_path: str) -> List[Dict[str, Any]]:
+    combined_data = []
     
     try:
         rules = process_rules(rules_file_path)
         processed_rules = process_rules_data(rules)
         combined_data.extend(processed_rules)
+        logger.info(f"Processed {len(processed_rules)} rules")
     except Exception as e:
         logger.error(f"Error processing rules: {e}")
     
@@ -68,8 +71,16 @@ def process_all_data(cards_file_path: str, rulings_file_path: str, rules_file_pa
         glossary = process_glossary(glossary_file_path)
         processed_glossary = process_glossary_data(glossary)
         combined_data.extend(processed_glossary)
+        logger.info(f"Processed {len(processed_glossary)} glossary terms")
     except Exception as e:
         logger.error(f"Error processing glossary: {e}")
     
+    logger.info(f"Total combined entries for rules and glossary: {len(combined_data)}")
+    return combined_data
+
+def process_all_data(cards_file_path: str, rulings_file_path: str, rules_file_path: str, glossary_file_path: str) -> List[Dict[str, Any]]:
+    combined_data = []
+    combined_data.extend(process_cards_data(cards_file_path, rulings_file_path))
+    combined_data.extend(process_rules_and_glossary_data(rules_file_path, glossary_file_path))
     logger.info(f"Total combined entries: {len(combined_data)}")
     return combined_data
