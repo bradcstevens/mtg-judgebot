@@ -7,6 +7,27 @@ from mtg_cards_api import setup_card_database, insert_card_into_db, insert_rulin
 
 logger = logging.getLogger(__name__)
 
+def process_rules_data(rules: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    processed_rules = []
+    for rule in rules:
+        try:
+            content = f"Rule {rule['rule_number']}: {rule['content']}"
+            metadata = {
+                'id': rule['id'],
+                'rule_number': rule['rule_number'],
+                'base_rule': rule['base_rule'],
+                'parent_rule': rule['parent_rule'],
+                'document_type': 'rule'
+            }
+            processed_rules.append({
+                'content': content,
+                'metadata': metadata
+            })
+        except KeyError as e:
+            logger.warning(f"Skipping rule due to missing key: {e}")
+    logger.info(f"Processed {len(processed_rules)} rules")
+    return processed_rules
+
 def process_glossary_data(glossary: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     processed_glossary = []
     for term in glossary:
@@ -61,7 +82,7 @@ def process_cards_data(cards_file_path: str, rulings_file_path: str, database_pa
         return processed_cards
     except Exception as e:
         logger.error(f"Error processing cards and rulings: {e}")
-        raise  # Re-raise the exception to see the full error traceback
+        raise  
 
 def process_rules_and_glossary_data(rules_file_path: str, glossary_file_path: str) -> List[Dict[str, Any]]:
     combined_data = []
