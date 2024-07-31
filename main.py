@@ -1,8 +1,8 @@
 import os
 import logging
 from typing import List, Dict, Any
-from data_processor import process_cards_data, process_rules_and_glossary_data
-from mtg_cards_api import setup_card_database, fetch_card_details_by_oracle_id
+from data_processor import process_cards_for_database, prepare_cards_for_vector_store, process_rules_and_glossary_data
+from mtg_cards_api import fetch_card_details_by_oracle_id
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
 from langchain_core.runnables import RunnablePassthrough
@@ -12,10 +12,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def create_or_load_sqlite_db(database_path: str, cards_file_path: str, rulings_file_path: str):
-    if not os.path.exists('db/mtg_cards.sqlite'):
+    if not os.path.exists(database_path):
         logger.info(f"Creating new SQLite database at {database_path}")
-        setup_card_database(database_path)
-        process_cards_data(cards_file_path, rulings_file_path, database_path)
+        process_cards_for_database(cards_file_path, rulings_file_path, database_path)
     else:
         logger.info(f"SQLite database already exists at {database_path}")
 
@@ -32,21 +31,18 @@ def process_query(query: str, mtg_chain, database_path: str):
     print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
     try:
         retrieved_items = mtg_chain.invoke(query)
-        print_search_results(retrieved_items, database_path)
+        print_search_results(retrieved_items)
     except Exception as e:
         logger.error(f"Error processing query '{query}': {e}")
 
-def print_search_results(results, database_path: str):
-    print("Retrieved Items:")
+def print_search_results(results):
+    print("Retrieved Cards:")
     for i, result in enumerate(results, 1):
-        print(f"{i}. Content: {result.page_content}")
         if result.metadata.get('document_type') == 'card':
-            oracle_id = result.metadata['oracle_id']
-            card_details = fetch_card_details_by_oracle_id(database_path, oracle_id)
-            print(f"   Oracle Text: {card_details.get('oracle_text', 'N/A')}")
-            print(f"   Rulings:")
-            for ruling in card_details.get('rulings', []):
-                print(f"     - {ruling['published_at']}: {ruling['comment']}")
+            print(f"{i}. Card Name: {result.page_content}")
+            print(f"   Oracle ID: {result.metadata['oracle_id']}")
+        else:
+            print(f"{i}. Content: {result.page_content}")
         print()
 
 def main():
@@ -73,33 +69,35 @@ def main():
 
     create_or_load_sqlite_db(database_path, cards_file_path, rulings_file_path)
 
-    # cards_vector_store = create_or_load_vector_store(
-    #     cards_vector_store_path, 
-    #     embeddings, 
-    #     lambda x, y: process_cards_data(x, y, database_path),
-    #     [cards_file_path, rulings_file_path]
-    # )
-
-    rules_glossary_vector_store = create_or_load_vector_store(
-        rules_glossary_vector_store_path,
-        embeddings,
-        process_rules_and_glossary_data,
-        [rules_file_path, glossary_file_path]
+    cards_vector_store = create_or_load_vector_store(
+        cards_vector_store_path, 
+        embeddings, 
+        prepare_cards_for_vector_store,
+        [cards_file_path, rulings_file_path]
     )
 
-    # cards_retriever = create_retriever(cards_vector_store)
-    rules_glossary_retriever = create_retriever(rules_glossary_vector_store)
+    # rules_glossary_vector_store = create_or_load_vector_store(
+    #     rules_glossary_vector_store_path,
+    #     embeddings,
+    #     process_rules_and_glossary_data,
+    #     [rules_file_path, glossary_file_path]
+    # )
 
-    # mtg_chain = RunnablePassthrough() | (cards_retriever, rules_glossary_retriever)
+    cards_retriever = create_retriever(cards_vector_store)
+    # rules_glossary_retriever = create_retriever(rules_glossary_vector_store)
+
+    mtg_chain = RunnablePassthrough() | (cards_retriever
+                                        #  , rules_glossary_retriever
+                                         )
 
     queries = [
         "What does Ogre Arsonist do?",
-        "Tell me about cards that interact with Food tokens",
+        "What does Satya do?",
         "How does deathtouch interact with trample?",
     ]
 
-    # for query in queries:
-    #     process_query(query, mtg_chain, database_path)
+    for query in queries:
+        process_query(query, mtg_chain, database_path)
 
 if __name__ == "__main__":
     main()

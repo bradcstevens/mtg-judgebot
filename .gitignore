@@ -8,3 +8,4 @@ glossary.txt
 chroma_db*
 *.sqlite
 *.dump
+data/
