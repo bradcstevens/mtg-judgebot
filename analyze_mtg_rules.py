@@ -1,31 +1,37 @@
 import pandas as pd
+import argparse
+import textwrap
 
-def load_rules_questions(filename='data/mtg_rules_questions.csv'):
-    return pd.read_csv(filename, parse_dates=['created_utc'])
-
-def print_sample_questions(df, n=5):
-    print(f"\nSample of {n} questions with full body text:")
-    for i, (title, body) in enumerate(zip(df['title'].head(n), df['body'].head(n)), 1):
-        print(f"\n{i}. Title: {title}")
-        print(f"Body:\n{body}\n")
-        print("-" * 80)  # Separator between questions
-
-def print_basic_stats(df):
-    print(f"\nTotal number of questions: {len(df)}")
-    print(f"Date range: from {df['created_utc'].min()} to {df['created_utc'].max()}")
-    print(f"Average score: {df['score'].mean():.2f}")
-    print(f"Average number of comments: {df['num_comments'].mean():.2f}")
-
-def print_question_length_stats(df):
-    df['body_length'] = df['body'].str.len()
-    print(f"\nQuestion body length statistics:")
-    print(f"Average length: {df['body_length'].mean():.2f} characters")
-    print(f"Median length: {df['body_length'].median()} characters")
-    print(f"Shortest question: {df['body_length'].min()} characters")
-    print(f"Longest question: {df['body_length'].max()} characters")
+def read_and_print_posts(file_path, start_index, batch_size=5):
+    # Read the CSV file
+    df = pd.read_csv(file_path, parse_dates=['created_utc'])
+    
+    # Ensure start_index is within bounds
+    start_index = max(0, min(start_index, len(df) - 1))
+    
+    # Get the batch of posts
+    end_index = min(start_index + batch_size, len(df))
+    batch = df.iloc[start_index:end_index]
+    
+    # Print the posts
+    for i, (_, post) in enumerate(batch.iterrows(), start=start_index):
+        print(f"\n--- Post {i + 1} ---")
+        print(f"ID: {post['id']}")
+        print("Body:")
+        # Wrap the body text for better readability
+        wrapped_body = textwrap.wrap(post['body'], width=80)
+        for line in wrapped_body:
+            print(line)
+        print("-" * 80)
+    
+    print(f"\nDisplayed posts {start_index + 1} to {end_index} out of {len(df)}")
 
 if __name__ == "__main__":
-    mtg_rules = load_rules_questions()
-    print_sample_questions(mtg_rules)
-    print_basic_stats(mtg_rules)
-    print_question_length_stats(mtg_rules)
+    parser = argparse.ArgumentParser(description="Read and display MTG rules questions from CSV.")
+    parser.add_argument("start_index", type=int, nargs="?", default=0, 
+                        help="Starting index for displaying posts (default: 0)")
+    parser.add_argument("--file", type=str, default="data/mtg_rules_questions.csv",
+                        help="Path to the CSV file (default: data/mtg_rules_questions.csv)")
+    args = parser.parse_args()
+
+    read_and_print_posts(args.file, args.start_index)
