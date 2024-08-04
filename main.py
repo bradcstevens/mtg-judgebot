@@ -1,14 +1,16 @@
 import os
 import logging
+import re
 from typing import List, Dict, Any
+from nltk import ngrams
+import torch
+from transformers import AutoTokenizer, AutoModelForTokenClassification
 from data_processor import process_cards_for_database, prepare_cards_for_vector_store, process_rules_and_glossary_data
 from mtg_cards_api import fetch_card_details_by_oracle_id
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
 from langchain_core.runnables import RunnablePassthrough
 from config import load_api_key
-from transformers import AutoTokenizer, AutoModelForTokenClassification
-import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,41 +20,33 @@ model_path = "models/mtg_card_name_model"
 tokenizer = AutoTokenizer.from_pretrained(model_path)
 model = AutoModelForTokenClassification.from_pretrained(model_path)
 
+print(model.config)  # Print model configuration
+
+# Assuming the label map is defined as follows (adjust if different):
+id_to_label = {0: "O", 1: "B-CARD", 2: "I-CARD"}
+
 def perform_ner(query: str) -> List[str]:
-    inputs = tokenizer(query, return_tensors="pt", truncation=True, padding=True)
-    print(f"Inputs: {inputs}")
+    tokens = query.split()
+    inputs = tokenizer(tokens, return_tensors="pt", is_split_into_words=True, padding=True, truncation=True)
     
     with torch.no_grad():
         outputs = model(**inputs)
-    print(f"Outputs: {outputs}")
-
-    predictions = torch.argmax(outputs.logits, dim=2)
-    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-    card_names = []
-    current_name = []
-
-    print("Tokens and predictions:")
-    for token, prediction in zip(tokens, predictions[0]):
-        print(f"Token: {token}, Prediction: {prediction.item()}")
-        if prediction.item() == 1:  # Assuming 1 is the label for card names
-            if token.startswith("##"):
-                current_name.append(token[2:])
-            else:
-                current_name.append(token)
-        elif current_name:
-            card_names.append(" ".join(current_name))
-            current_name = []
-    if current_name:
-        card_names.append(" ".join(current_name))
     
-    print(f"Detected card names: {card_names}")
+    predictions = torch.argmax(outputs.logits, dim=2)
+    predicted_tokens = []
+    card_names = []
+    
+    for token, prediction in zip(tokens, predictions[0]):
+        if id_to_label[prediction.item()].startswith("B-") or id_to_label[prediction.item()].startswith("I-"):
+            predicted_tokens.append(token)
+        elif predicted_tokens:
+            card_names.append(" ".join(predicted_tokens))
+            predicted_tokens = []
+    
+    if predicted_tokens:
+        card_names.append(" ".join(predicted_tokens))
+    
     return card_names
-
-
-def capitalize_potential_card_names(query: str) -> str:
-    words = query.split()
-    capitalized_words = [word.capitalize() if len(word) > 3 and word.isalpha() else word for word in words]
-    return " ".join(capitalized_words)
 
 def create_or_load_sqlite_db(database_path: str, cards_file_path: str, rulings_file_path: str):
     if not os.path.exists(database_path):
@@ -75,12 +69,12 @@ def process_query(query: str, mtg_chain, database_path: str):
     try:
         # Perform NER on the query
         card_names = perform_ner(query)
+        
         print(f"Detected card names: {card_names}")
 
-        # If no card names detected, use fallback
         if not card_names:
-            print("No card names detected by NER, using fallback method.")
-            modified_query = capitalize_potential_card_names(query)
+            print("No card names detected, using original query.")
+            modified_query = query
         else:
             modified_query = f"Information about {', '.join(card_names)}: {query}"
 
@@ -131,25 +125,13 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    # rules_glossary_vector_store = create_or_load_vector_store(
-    #     rules_glossary_vector_store_path,
-    #     embeddings,
-    #     process_rules_and_glossary_data,
-    #     [rules_file_path, glossary_file_path]
-    # )
-
     cards_retriever = create_retriever(cards_vector_store)
-    # rules_glossary_retriever = create_retriever(rules_glossary_vector_store)
 
-    mtg_chain = RunnablePassthrough() | (cards_retriever
-                                        #  , rules_glossary_retriever
-                                         )
+    mtg_chain = RunnablePassthrough() | cards_retriever
 
     queries = [
-        "What does Ogre Arsonist do?",
-        "What does Satya do?",
-        "What does Arcane Investigator do?",
-        "How does deathtouch interact with trample?",
+        "How much mana does Black Lotus cost to play?",
+        "My name is Michael"
     ]
 
     for query in queries:
