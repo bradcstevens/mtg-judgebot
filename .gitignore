@@ -9,3 +9,6 @@ chroma_db*
 *.sqlite
 *.dump
 data/
+fresh_env/
+models/
+results/

@@ -7,9 +7,52 @@ from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
 from langchain_core.runnables import RunnablePassthrough
 from config import load_api_key
+from transformers import AutoTokenizer, AutoModelForTokenClassification
+import torch
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Load the trained model and tokenizer
+model_path = "models/mtg_card_name_model"
+tokenizer = AutoTokenizer.from_pretrained(model_path)
+model = AutoModelForTokenClassification.from_pretrained(model_path)
+
+def perform_ner(query: str) -> List[str]:
+    inputs = tokenizer(query, return_tensors="pt", truncation=True, padding=True)
+    print(f"Inputs: {inputs}")
+    
+    with torch.no_grad():
+        outputs = model(**inputs)
+    print(f"Outputs: {outputs}")
+
+    predictions = torch.argmax(outputs.logits, dim=2)
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+    card_names = []
+    current_name = []
+
+    print("Tokens and predictions:")
+    for token, prediction in zip(tokens, predictions[0]):
+        print(f"Token: {token}, Prediction: {prediction.item()}")
+        if prediction.item() == 1:  # Assuming 1 is the label for card names
+            if token.startswith("##"):
+                current_name.append(token[2:])
+            else:
+                current_name.append(token)
+        elif current_name:
+            card_names.append(" ".join(current_name))
+            current_name = []
+    if current_name:
+        card_names.append(" ".join(current_name))
+    
+    print(f"Detected card names: {card_names}")
+    return card_names
+
+
+def capitalize_potential_card_names(query: str) -> str:
+    words = query.split()
+    capitalized_words = [word.capitalize() if len(word) > 3 and word.isalpha() else word for word in words]
+    return " ".join(capitalized_words)
 
 def create_or_load_sqlite_db(database_path: str, cards_file_path: str, rulings_file_path: str):
     if not os.path.exists(database_path):
@@ -30,7 +73,19 @@ def create_or_load_vector_store(persist_directory: str, embeddings, data_process
 def process_query(query: str, mtg_chain, database_path: str):
     print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
     try:
-        retrieved_items = mtg_chain.invoke(query)
+        # Perform NER on the query
+        card_names = perform_ner(query)
+        print(f"Detected card names: {card_names}")
+
+        # If no card names detected, use fallback
+        if not card_names:
+            print("No card names detected by NER, using fallback method.")
+            modified_query = capitalize_potential_card_names(query)
+        else:
+            modified_query = f"Information about {', '.join(card_names)}: {query}"
+
+        print(f"Modified query: {modified_query}")
+        retrieved_items = mtg_chain.invoke(modified_query)
         print_search_results(retrieved_items)
     except Exception as e:
         logger.error(f"Error processing query '{query}': {e}")
@@ -93,6 +148,7 @@ def main():
     queries = [
         "What does Ogre Arsonist do?",
         "What does Satya do?",
+        "What does Arcane Investigator do?",
         "How does deathtouch interact with trample?",
     ]
 
