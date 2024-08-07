@@ -26,27 +26,33 @@ print(model.config)  # Print model configuration
 id_to_label = {0: "O", 1: "B-CARD", 2: "I-CARD"}
 
 def perform_ner(query: str) -> List[str]:
-    tokens = query.split()
-    inputs = tokenizer(tokens, return_tensors="pt", is_split_into_words=True, padding=True, truncation=True)
+    inputs = tokenizer(query, return_tensors="pt", padding=True, truncation=True)
     
     with torch.no_grad():
         outputs = model(**inputs)
     
     predictions = torch.argmax(outputs.logits, dim=2)
-    predicted_tokens = []
+    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
+    
     card_names = []
+    current_card = []
     
-    for token, prediction in zip(tokens, predictions[0]):
-        if id_to_label[prediction.item()].startswith("B-") or id_to_label[prediction.item()].startswith("I-"):
-            predicted_tokens.append(token)
-        elif predicted_tokens:
-            card_names.append(" ".join(predicted_tokens))
-            predicted_tokens = []
+    for token, pred in zip(tokens, predictions[0]):
+        if id_to_label[pred.item()] == "B-CARD":
+            if current_card:
+                card_names.append(tokenizer.convert_tokens_to_string(current_card))
+                current_card = []
+            current_card.append(token)
+        elif id_to_label[pred.item()] == "I-CARD":
+            current_card.append(token)
+        elif current_card:
+            card_names.append(tokenizer.convert_tokens_to_string(current_card))
+            current_card = []
     
-    if predicted_tokens:
-        card_names.append(" ".join(predicted_tokens))
+    if current_card:
+        card_names.append(tokenizer.convert_tokens_to_string(current_card))
     
-    return card_names
+    return [name.strip() for name in card_names if name.strip()]
 
 def create_or_load_sqlite_db(database_path: str, cards_file_path: str, rulings_file_path: str):
     if not os.path.exists(database_path):
@@ -86,13 +92,13 @@ def process_query(query: str, mtg_chain, database_path: str):
 
 def print_search_results(results):
     print("Retrieved Cards:")
-    for i, result in enumerate(results, 1):
-        if result.metadata.get('document_type') == 'card':
-            print(f"{i}. Card Name: {result.page_content}")
-            print(f"   Oracle ID: {result.metadata['oracle_id']}")
-        else:
-            print(f"{i}. Content: {result.page_content}")
-        print()
+    # for i, result in enumerate(results, 1):
+    #     if result.metadata.get('document_type') == 'card':
+    #         print(f"{i}. Card Name: {result.page_content}")
+    #         print(f"   Oracle ID: {result.metadata['oracle_id']}")
+    #     else:
+    #         print(f"{i}. Content: {result.page_content}")
+    #     print()
 
 def main():
     cards_file_path = 'data/oracle-cards-20240722210341.json'
@@ -125,12 +131,25 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    cards_retriever = create_retriever(cards_vector_store)
+    # rules_glossary_vector_store = create_or_load_vector_store(
+    #     rules_glossary_vector_store_path,
+    #     embeddings,
+    #     process_rules_and_glossary_data,
+    #     [rules_file_path, glossary_file_path]
+    # )
 
-    mtg_chain = RunnablePassthrough() | cards_retriever
+    cards_retriever = create_retriever(cards_vector_store)
+    # rules_glossary_retriever = create_retriever(rules_glossary_vector_store)
+
+    mtg_chain = RunnablePassthrough() | (cards_retriever
+                                        #  , rules_glossary_retriever
+                                         )
 
     queries = [
         "How much mana does Black Lotus cost to play?",
+        "What is the effect of Time Walk?",
+        "How many cards do you draw with Brainstorm?",
+        "Can you use Mana Drain in Modern?",
         "My name is Michael"
     ]
 
