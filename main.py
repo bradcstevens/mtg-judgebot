@@ -1,15 +1,36 @@
 import os
 import logging
-import re
-from typing import List, Dict, Any
-from nltk import ngrams
+from typing import List
 import torch
-from transformers import AutoTokenizer, AutoModelForTokenClassification
-from data_processor import process_cards_for_database, prepare_cards_for_vector_store, process_rules_and_glossary_data
+import json
+from transformers import AutoModelForTokenClassification, PreTrainedTokenizerFast
+from langchain.agents import AgentExecutor, OpenAIFunctionsAgent
+from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
+from langchain.schema import SystemMessage
+from langchain.tools import Tool, StructuredTool
+from langchain_openai import ChatOpenAI
+from langchain.schema.runnable import RunnablePassthrough
+from pydantic import BaseModel, Field
+
+class CardNameRecognitionInput(BaseModel):
+    card_names: List[str] = Field(..., description="List of Magic: The Gathering card names to analyze")
+
+def create_card_name_recognition_tool():
+    def recognize_card_names(card_names):
+        logger.info(f"Card names recognized: {card_names}")
+        return f"Card names logged: {', '.join(card_names)}"
+
+    return StructuredTool.from_function(
+        func=recognize_card_names,
+        name="recognize_card_names",
+        description="Recognize and log Magic: The Gathering card names from the user's input. Log everything that could conceivably be a card name. This includes card names you do not know. Your criteria for deciding whether to include it is that it is used in the sentence in a way that a Magic the Gathering card name might be. Your goal is to retrieve a unique list of card names used in the user's question so we can look up more information about those card names.",
+        args_schema=CardNameRecognitionInput
+    )
+
+from data_processor import process_cards_for_database, prepare_cards_for_vector_store
 from mtg_cards_api import fetch_card_details_by_oracle_id
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
-from langchain_core.runnables import RunnablePassthrough
 from config import load_api_key
 
 logging.basicConfig(level=logging.INFO)
@@ -17,42 +38,9 @@ logger = logging.getLogger(__name__)
 
 # Load the trained model and tokenizer
 model_path = "models/mtg_card_name_model"
-tokenizer = AutoTokenizer.from_pretrained(model_path)
+tokenizer_path = "models/tokenizer"
 model = AutoModelForTokenClassification.from_pretrained(model_path)
-
-print(model.config)  # Print model configuration
-
-# Assuming the label map is defined as follows (adjust if different):
-id_to_label = {0: "O", 1: "B-CARD", 2: "I-CARD"}
-
-def perform_ner(query: str) -> List[str]:
-    inputs = tokenizer(query, return_tensors="pt", padding=True, truncation=True)
-    
-    with torch.no_grad():
-        outputs = model(**inputs)
-    
-    predictions = torch.argmax(outputs.logits, dim=2)
-    tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0])
-    
-    card_names = []
-    current_card = []
-    
-    for token, pred in zip(tokens, predictions[0]):
-        if id_to_label[pred.item()] == "B-CARD":
-            if current_card:
-                card_names.append(tokenizer.convert_tokens_to_string(current_card))
-                current_card = []
-            current_card.append(token)
-        elif id_to_label[pred.item()] == "I-CARD":
-            current_card.append(token)
-        elif current_card:
-            card_names.append(tokenizer.convert_tokens_to_string(current_card))
-            current_card = []
-    
-    if current_card:
-        card_names.append(tokenizer.convert_tokens_to_string(current_card))
-    
-    return [name.strip() for name in card_names if name.strip()]
+tokenizer = PreTrainedTokenizerFast.from_pretrained(tokenizer_path)
 
 def create_or_load_sqlite_db(database_path: str, cards_file_path: str, rulings_file_path: str):
     if not os.path.exists(database_path):
@@ -92,13 +80,32 @@ def process_query(query: str, mtg_chain, database_path: str):
 
 def print_search_results(results):
     print("Retrieved Cards:")
-    # for i, result in enumerate(results, 1):
-    #     if result.metadata.get('document_type') == 'card':
-    #         print(f"{i}. Card Name: {result.page_content}")
-    #         print(f"   Oracle ID: {result.metadata['oracle_id']}")
-    #     else:
-    #         print(f"{i}. Content: {result.page_content}")
-    #     print()
+    for i, result in enumerate(results, 1):
+        if result.metadata.get('document_type') == 'card':
+            print(f"{i}. Card Name: {result.page_content}")
+            print(f"   Oracle ID: {result.metadata['oracle_id']}")
+        else:
+            print(f"{i}. Content: {result.page_content}")
+        print()
+
+def create_react_agent(llm, tools):
+    prompt = ChatPromptTemplate.from_messages([
+        SystemMessage(content="You are a Magic: The Gathering Judge who is answering rules questions from users."),
+        HumanMessagePromptTemplate.from_template("{input}"),
+        MessagesPlaceholder(variable_name="agent_scratchpad"),
+    ])
+    
+    agent = OpenAIFunctionsAgent(
+        llm=llm,
+        tools=tools,
+        prompt=prompt,
+        format_scratchpad=format_scratchpad
+    )
+    
+    return AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+def format_scratchpad(intermediate_steps):
+    return "\n".join([f"{action.log}\nObservation: {observation}" for action, observation in intermediate_steps])
 
 def main():
     cards_file_path = 'data/oracle-cards-20240722210341.json'
@@ -131,30 +138,36 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    # rules_glossary_vector_store = create_or_load_vector_store(
-    #     rules_glossary_vector_store_path,
-    #     embeddings,
-    #     process_rules_and_glossary_data,
-    #     [rules_file_path, glossary_file_path]
-    # )
-
     cards_retriever = create_retriever(cards_vector_store)
-    # rules_glossary_retriever = create_retriever(rules_glossary_vector_store)
 
-    mtg_chain = RunnablePassthrough() | (cards_retriever
-                                        #  , rules_glossary_retriever
-                                         )
+    mtg_chain = RunnablePassthrough() | cards_retriever
 
-    queries = [
-        "How much mana does Black Lotus cost to play?",
-        "What is the effect of Time Walk?",
-        "How many cards do you draw with Brainstorm?",
-        "Can you use Mana Drain in Modern?",
-        "My name is Michael"
+    # Create only the card name recognition tool
+    card_name_tool = create_card_name_recognition_tool()
+
+    # Create the agent with only the card name tool
+    llm = ChatOpenAI(temperature=0, model="gpt-4")
+    tools = [card_name_tool]
+    agent_executor = create_react_agent(llm, tools)
+
+    # Example queries
+    example_queries = [
+        # "How much mana does Black Lotus cost to play?",
+        # "What is the effect of Time Walk?",
+        # "How many cards do you draw with Brainstorm?",
+        # "Can you use Mana Drain in Modern?",
+        # "My name is Michael",
+        # "What does trample do?",
+        "I cast Michael, and my opponent responds with Hulk Smash",
+        "I attack with Satya, Aetherflux Genius. My opponent's Satya, Masterful Overlord makes 2 copies of itself. What happens?",
+        "I cast Satya, Aetherflux Genius. My opponent counters Satya. How much energy do I have?",
+        "I attack my opponent with Satya, making a copy of razorfield ripper. When I do, my opponent casts Swords to Plowshares on my Satya. What happens?"
     ]
 
-    for query in queries:
-        process_query(query, mtg_chain, database_path)
+    for query in example_queries:
+        print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
+        result = agent_executor.invoke({"input": query})
+        print(f"Agent response: {result['output']}")
 
 if __name__ == "__main__":
     main()
