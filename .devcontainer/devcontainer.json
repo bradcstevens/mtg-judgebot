@@ -1,0 +1,33 @@
+{
+    "name": "Python 3 Development",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.linting.enabled": true,
+                "python.linting.pylintEnabled": true,
+                "python.formatting.autopep8Path": "/usr/local/bin/autopep8",
+                "python.formatting.blackPath": "/usr/local/bin/black",
+                "python.formatting.yapfPath": "/usr/local/bin/yapf",
+                "python.linting.banditPath": "/usr/local/bin/bandit",
+                "python.linting.flake8Path": "/usr/local/bin/flake8",
+                "python.linting.mypyPath": "/usr/local/bin/mypy",
+                "python.linting.pycodestylePath": "/usr/local/bin/pycodestyle",
+                "python.linting.pydocstylePath": "/usr/local/bin/pydocstyle"
+            },
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+            ]
+        }
+    },
+    "forwardPorts": [
+        80
+    ],
+    "postCreateCommand": "pip install --upgrade pip && pip install --user -r requirements.txt",
+    "remoteUser": "vscode"
+}

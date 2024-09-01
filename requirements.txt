@@ -1,0 +1,16 @@
+torch
+transformers
+pandas
+python-dotenv
+langchain_openai
+langchain_chroma
+langchain>=0.0.350
+langchain_core>=0.1.0
+datasets
+seqeval
+tokenizers
+langchain_core
+argparse
+numpy
+chromadb
+urllib3>=2.0.0

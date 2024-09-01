@@ -12,3 +12,4 @@ data/
 fresh_env/
 models/
 results/
+.DS_Store
