@@ -12,13 +12,25 @@ from langchain_openai import ChatOpenAI
 from langchain.schema.runnable import RunnablePassthrough
 from pydantic import BaseModel, Field
 
+from mtg_cards_api import fetch_card_by_name
+
+database_path = "db/mtg_cards.sqlite"
+
 class CardNameRecognitionInput(BaseModel):
     card_names: List[str] = Field(..., description="List of Magic: The Gathering card names to analyze")
 
 def create_card_name_recognition_tool():
     def recognize_card_names(card_names):
-        logger.info(f"Card names recognized: {card_names}")
-        return f"Card names logged: {', '.join(card_names)}"
+        recognized_cards = []
+        for card_name in card_names:
+            card_details = fetch_card_by_name(database_path, card_name)
+            if card_details:
+                recognized_cards.extend(card_details)
+            else:
+                logger.warning(f"Card not found: {card_name}")
+        
+        logger.info(f"Recognized cards: {[card['name'] for card in recognized_cards]}")
+        return json.dumps(recognized_cards, indent=2)
 
     return StructuredTool.from_function(
         func=recognize_card_names,
@@ -58,26 +70,6 @@ def create_or_load_vector_store(persist_directory: str, embeddings, data_process
         data = data_processor(*file_paths)
         return create_vector_store(data, embeddings, persist_directory)
 
-def process_query(query: str, mtg_chain, database_path: str):
-    print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
-    try:
-        # Perform NER on the query
-        card_names = perform_ner(query)
-        
-        print(f"Detected card names: {card_names}")
-
-        if not card_names:
-            print("No card names detected, using original query.")
-            modified_query = query
-        else:
-            modified_query = f"Information about {', '.join(card_names)}: {query}"
-
-        print(f"Modified query: {modified_query}")
-        retrieved_items = mtg_chain.invoke(modified_query)
-        print_search_results(retrieved_items)
-    except Exception as e:
-        logger.error(f"Error processing query '{query}': {e}")
-
 def print_search_results(results):
     print("Retrieved Cards:")
     for i, result in enumerate(results, 1):
@@ -109,7 +101,7 @@ def format_scratchpad(intermediate_steps):
 
 def main():
     cards_file_path = 'data/oracle-cards-20240722210341.json'
-    rulings_file_path = 'data/rulings-20240722210039.json'
+    rulings_file_path = 'data/rulings-20240901210034.json'
     rules_file_path = 'data/official-rules.txt'
     glossary_file_path = 'data/glossary.txt'
     

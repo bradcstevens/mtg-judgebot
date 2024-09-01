@@ -1,6 +1,6 @@
 import sqlite3
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 def setup_card_database(database_path: str):
     conn = sqlite3.connect(database_path)
@@ -134,3 +134,69 @@ def fetch_card_details_by_oracle_id(database_path: str, oracle_id: str) -> Dict[
         return card_dict
     else:
         return {}
+
+def fetch_all_card_names(database_path: str) -> List[str]:
+    """Fetch all card names from the database."""
+    conn = sqlite3.connect(database_path)
+    c = conn.cursor()
+
+    c.execute("SELECT name FROM cards")
+    card_names = [row[0] for row in c.fetchall()]
+
+    conn.close()
+
+    return card_names
+
+def fetch_card_by_name(database_path: str, card_name: str) -> List[Dict[str, Any]]:
+    """
+    Fetch cards from the database that partially match the given name.
+
+    Args:
+        database_path (str): Path to the SQLite database.
+        card_name (str): Name of the card to search for.
+
+    Returns:
+        List[Dict[str, Any]]: List of matching card dictionaries with their rulings.
+    """
+    conn = sqlite3.connect(database_path)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    # Search for cards with names that partially match the input
+    c.execute("SELECT * FROM cards WHERE name LIKE ?", (f"%{card_name}%",))
+    card_results = c.fetchall()
+
+    matching_cards = []
+
+    for card_result in card_results:
+        card_dict = dict(card_result)
+        oracle_id = card_dict['oracle_id']
+
+        # Fetch associated rulings
+        c.execute("SELECT * FROM rulings WHERE oracle_id = ?", (oracle_id,))
+        ruling_results = c.fetchall()
+
+        # Parse JSON strings back to Python objects
+        for key, value in card_dict.items():
+            if value and isinstance(value, str):
+                try:
+                    card_dict[key] = json.loads(value)
+                except json.JSONDecodeError:
+                    pass  # Keep the original string if it's not valid JSON
+
+        # Add rulings to the card dictionary
+        card_dict['rulings'] = [
+            {
+                'object': ruling['object'],
+                'source': ruling['source'],
+                'published_at': ruling['published_at'],
+                'comment': ruling['comment']
+            }
+            for ruling in ruling_results
+        ]
+
+        matching_cards.append(card_dict)
+
+    conn.close()
+
+    return matching_cards
