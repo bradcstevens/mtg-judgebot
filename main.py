@@ -38,25 +38,7 @@ def create_card_name_recognition_tool():
         for card_name in card_names:
             card_details = fetch_card_by_name(database_path, card_name)
             if card_details:
-                filtered_cards = []
-                for card in card_details:
-                    if card.get('oracle_text'):
-                        filtered_card = {
-                            'name': card.get('name'),
-                            'cmc': card.get('cmc'),
-                            'oracle_text': card.get('oracle_text'),
-                            'legalities': card.get('legalities'),
-                            'released_at': card.get('released_at'),
-                            'mana_cost': card.get('mana_cost'),
-                            'power': card.get('power'),
-                            'toughness': card.get('toughness'),
-                            'colors': card.get('colors'),
-                            'color_identity': card.get('color_identity'),
-                            'set_name': card.get('set_name'),
-                            'rulings': [{'comment': ruling['comment']} for ruling in card.get('rulings', [])]
-                        }
-                        filtered_cards.append(filtered_card)
-                recognized_cards.extend(filtered_cards)
+                recognized_cards.extend(card_details)
             else:
                 logger.warning(f"Card not found: {card_name}")
         
@@ -73,29 +55,54 @@ def create_card_name_recognition_tool():
 def create_rules_retrieval_tool(rules_vector_store):
     def retrieve_relevant_rules(query: str) -> str:
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=100,
-            chunk_overlap=20,
+            chunk_size=300,
+            chunk_overlap=50,
             length_function=len,
         )
         chunks = text_splitter.split_text(query)
 
         all_results = []
         for chunk in chunks:
-            results = rules_vector_store.similarity_search(chunk, k=2)
-            all_results.extend(results)
+            results = rules_vector_store.similarity_search_with_score(
+                chunk, k=3
+            )
+            logging.debug(f"Raw results: {results}")
+            
+            for doc, score in results:
+                doc.metadata['relevance_score'] = 1.0 - score  # Convert distance to similarity
+                all_results.append(doc)
+
+            logging.info(f"Results with scores: {[(r.page_content[:50], r.metadata.get('relevance_score')) for r in all_results[-3:]]}")
 
         unique_results = list({r.page_content: r for r in all_results}.values())
 
-        formatted_results = []
-        for i, doc in enumerate(unique_results, 1):
-            formatted_results.append(f"Rule {i}:\n{doc.page_content}\n")
+        logging.info(f"Total unique results before filtering: {len(unique_results)}")
+        for i, r in enumerate(unique_results):
+            logging.info(f"Result {i+1} metadata: {r.metadata}")
+            score = r.metadata.get('relevance_score', 'N/A')
+            logging.info(f"Result {i+1} score: {score if score == 'N/A' else f'{score:.4f}'}")
 
-        return "\n".join(formatted_results)
+        threshold = 0.3  # Adjust this value based on observed scores
+        filtered_results = [r for r in unique_results if r.metadata.get('relevance_score', 0) >= threshold]
+
+        logging.info(f"Results after filtering (threshold {threshold}): {len(filtered_results)}")
+        for i, r in enumerate(filtered_results):
+            score = r.metadata.get('relevance_score', 'N/A')
+            logging.info(f"Filtered result {i+1} metadata: {r.metadata}")
+            logging.info(f"Filtered result {i+1} score: {score if score == 'N/A' else f'{score:.2f}'}")
+
+        formatted_results = []
+        for i, doc in enumerate(filtered_results, 1):
+            score = doc.metadata.get('relevance_score', 'N/A')
+            formatted_results.append(f"Rule {i} (Score: {score if score == 'N/A' else f'{score:.2f}'}):\n{doc.page_content}\n")
+
+        return "\n".join(formatted_results) if formatted_results else "No relevant rules found."
 
     return StructuredTool.from_function(
         func=retrieve_relevant_rules,
         name="retrieve_relevant_rules",
-        description="Retrieve relevant Magic: The Gathering rules based on the given user query or oracle text of a card or rulings of a card.",
+        description="Retrieve relevant Magic: The Gathering rules based on the given query or context. Use this tool whenever there is an interaction, game state, rule, or card text or ruling that you have any degree of ambiguity about. To use this tool, replace card names with relevant text you have retrieved about them from oracle_text or rulings. "
+        "For example, replace a creature's name with creature or its subtypes. Replace a spell like murder with its effect of destroy a creature.",
         args_schema=RulesRetrievalInput
     )
 
@@ -138,8 +145,9 @@ def create_react_agent(llm, tools):
         For any part of the user's query that you're unsure about or need more information on, use the retrieve_relevant_rules tool to get relevant rules information. This tool will help you provide accurate and comprehensive answers.
         
         Always use the recognize_card_names tool first to identify any card names in the query, then use the retrieve_relevant_rules tool to get relevant rules for the situation described in the query.
-        You may need to use the retrieve_relevant_rules tool on the user's query, or on the oracle text or rulings from the card_names tool, if provided.
-        After gathering all necessary information, provide a clear and concise answer to the user's question."""),
+        
+        After gathering all necessary information, provide a clear and concise answer to the user's question.
+        Remember, you are a judge, so defer to the rules to make the decision. The person asking the question is only a player and may have given you bad information based on their flawed understanding. Use the rules and tools you have to answer the question."""),
         HumanMessagePromptTemplate.from_template("{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
     ])
