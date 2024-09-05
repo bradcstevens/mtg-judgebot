@@ -38,7 +38,25 @@ def create_card_name_recognition_tool():
         for card_name in card_names:
             card_details = fetch_card_by_name(database_path, card_name)
             if card_details:
-                recognized_cards.extend(card_details)
+                filtered_cards = []
+                for card in card_details:
+                    if card.get('oracle_text'):
+                        filtered_card = {
+                            'name': card.get('name'),
+                            'cmc': card.get('cmc'),
+                            'oracle_text': card.get('oracle_text'),
+                            'legalities': card.get('legalities'),
+                            'released_at': card.get('released_at'),
+                            'mana_cost': card.get('mana_cost'),
+                            'power': card.get('power'),
+                            'toughness': card.get('toughness'),
+                            'colors': card.get('colors'),
+                            'color_identity': card.get('color_identity'),
+                            'set_name': card.get('set_name'),
+                            'rulings': [{'comment': ruling['comment']} for ruling in card.get('rulings', [])]
+                        }
+                        filtered_cards.append(filtered_card)
+                recognized_cards.extend(filtered_cards)
             else:
                 logger.warning(f"Card not found: {card_name}")
         
@@ -77,7 +95,7 @@ def create_rules_retrieval_tool(rules_vector_store):
     return StructuredTool.from_function(
         func=retrieve_relevant_rules,
         name="retrieve_relevant_rules",
-        description="Retrieve relevant Magic: The Gathering rules based on the given query or context.",
+        description="Retrieve relevant Magic: The Gathering rules based on the given user query or oracle text of a card or rulings of a card.",
         args_schema=RulesRetrievalInput
     )
 
@@ -120,7 +138,7 @@ def create_react_agent(llm, tools):
         For any part of the user's query that you're unsure about or need more information on, use the retrieve_relevant_rules tool to get relevant rules information. This tool will help you provide accurate and comprehensive answers.
         
         Always use the recognize_card_names tool first to identify any card names in the query, then use the retrieve_relevant_rules tool to get relevant rules for the situation described in the query.
-        
+        You may need to use the retrieve_relevant_rules tool on the user's query, or on the oracle text or rulings from the card_names tool, if provided.
         After gathering all necessary information, provide a clear and concise answer to the user's question."""),
         HumanMessagePromptTemplate.from_template("{input}"),
         MessagesPlaceholder(variable_name="agent_scratchpad"),
@@ -129,14 +147,15 @@ def create_react_agent(llm, tools):
     agent = OpenAIFunctionsAgent(
         llm=llm,
         tools=tools,
-        prompt=prompt,
-        format_scratchpad=format_scratchpad
+        prompt=prompt
     )
     
-    return AgentExecutor(agent=agent, tools=tools, verbose=True)
-
-def format_scratchpad(intermediate_steps):
-    return "\n".join([f"{action.log}\nObservation: {observation}" for action, observation in intermediate_steps])
+    return AgentExecutor(
+        agent=agent, 
+        tools=tools, 
+        verbose=True,
+        return_intermediate_steps=True
+    )
 
 def main():
     cards_file_path = 'data/oracle-cards-20240722210341.json'
@@ -187,10 +206,10 @@ def main():
 
     # Example queries
     example_queries = [
-        "I cast Michael, and my opponent responds with Hulk Smash",
-        "I attack with Satya, Aetherflux Genius. My opponent's Satya, Masterful Overlord makes 2 copies of itself. What happens?",
-        "I cast Satya, Aetherflux Genius. My opponent counters Satya. How much energy do I have?",
-        "I attack my opponent with Satya, making a copy of razorfield ripper. When I do, my opponent casts Swords to Plowshares on my Satya. What happens?"
+        # "I cast Michael, and my opponent responds with Hulk Smash",
+        # "I attack with Satya, Aetherflux Genius. My opponent's Satya, Masterful Overlord makes 2 copies of itself. What happens?",
+        # "I cast Satya, Aetherflux Genius. My opponent counters Satya. How much energy do I have?",
+        "I have 4 energy. I attack my opponent with Satya, making a copy of razorfield ripper, which enters the battlefield attacking. When razorfield ripper attacks, I get an energy. When I do, my opponent casts Swords to Plowshares on my Satya. How much energy do I have now?"
     ]
 
     for query in example_queries:
