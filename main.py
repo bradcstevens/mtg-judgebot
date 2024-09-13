@@ -1,7 +1,6 @@
 import os
 import logging
 from typing import List
-import torch
 import json
 from transformers import AutoModelForTokenClassification, PreTrainedTokenizerFast
 from langchain.agents import AgentExecutor, OpenAIFunctionsAgent
@@ -9,17 +8,14 @@ from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, Me
 from langchain.schema import SystemMessage
 from langchain.tools import Tool, StructuredTool
 from langchain_openai import ChatOpenAI
-from langchain.schema.runnable import RunnablePassthrough
 from pydantic import BaseModel, Field
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.schema import Document
 
 from mtg_cards_api import fetch_card_by_name
-from data_processor import process_cards_for_database, prepare_cards_for_vector_store, process_rules_and_glossary_data
-from mtg_cards_api import fetch_card_details_by_oracle_id
+from data_processor import process_cards_for_database, prepare_cards_for_vector_store
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
 from config import load_api_key
+from rules_api import get_rule_and_children
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,9 +24,6 @@ database_path = "db/mtg_cards.sqlite"
 
 class CardNameRecognitionInput(BaseModel):
     card_names: List[str] = Field(..., description="List of Magic: The Gathering card names to analyze")
-
-class RulesRetrievalInput(BaseModel):
-    query: str = Field(..., description="The query or context to search for relevant rules")
 
 def create_card_name_recognition_tool():
     def recognize_card_names(card_names):
@@ -52,59 +45,33 @@ def create_card_name_recognition_tool():
         args_schema=CardNameRecognitionInput
     )
 
-def create_rules_retrieval_tool(rules_vector_store):
-    def retrieve_relevant_rules(query: str) -> str:
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=300,
-            chunk_overlap=50,
-            length_function=len,
-        )
-        chunks = text_splitter.split_text(query)
+class RulesLookupInput(BaseModel):
+    rule_numbers: List[str] = Field(..., description="List of Magic: The Gathering rule numbers to look up")
 
-        all_results = []
-        for chunk in chunks:
-            results = rules_vector_store.similarity_search_with_score(
-                chunk, k=3
-            )
-            logging.debug(f"Raw results: {results}")
+def rules_lookup(rule_numbers: List[str]) -> str:
+    responses = []
+    for rule_number in rule_numbers:
+        print(f"Fetching rule {rule_number} and its subrules")  # Debug print
+        rule_data = get_rule_and_children(rule_number)
+        print(f"Rule data for {rule_number}: {rule_data}")  # Debug print
+        
+        if not rule_data:
+            responses.append(f"Rule {rule_number} not found.")
+        else:
+            response = f"Rule {rule_data['rule_number']}: {rule_data['content']}\n\n"
             
-            for doc, score in results:
-                doc.metadata['relevance_score'] = 1.0 - score  # Convert distance to similarity
-                all_results.append(doc)
-
-            logging.info(f"Results with scores: {[(r.page_content[:50], r.metadata.get('relevance_score')) for r in all_results[-3:]]}")
-
-        unique_results = list({r.page_content: r for r in all_results}.values())
-
-        logging.info(f"Total unique results before filtering: {len(unique_results)}")
-        for i, r in enumerate(unique_results):
-            logging.info(f"Result {i+1} metadata: {r.metadata}")
-            score = r.metadata.get('relevance_score', 'N/A')
-            logging.info(f"Result {i+1} score: {score if score == 'N/A' else f'{score:.4f}'}")
-
-        threshold = 0.75  # Adjust this value based on observed scores
-        filtered_results = [r for r in unique_results if r.metadata.get('relevance_score', 0) >= threshold]
-
-        logging.info(f"Results after filtering (threshold {threshold}): {len(filtered_results)}")
-        for i, r in enumerate(filtered_results):
-            score = r.metadata.get('relevance_score', 'N/A')
-            logging.info(f"Filtered result {i+1} metadata: {r.metadata}")
-            logging.info(f"Filtered result {i+1} score: {score if score == 'N/A' else f'{score:.4f}'}")
-
-        formatted_results = []
-        for i, doc in enumerate(filtered_results, 1):
-            score = doc.metadata.get('relevance_score', 'N/A')
-            formatted_results.append(f"Rule {i} (Score: {score if score == 'N/A' else f'{score:.4f}'}):\n{doc.page_content}\n")
-
-        return "\n".join(formatted_results) if formatted_results else "No relevant rules found."
-
-    return StructuredTool.from_function(
-        func=retrieve_relevant_rules,
-        name="retrieve_relevant_rules",
-        description="Retrieve relevant Magic: The Gathering rules based on the given query or context. Use this tool whenever there is an interaction, game state, rule, or card text or ruling that you have any degree of ambiguity about. To use this tool, replace card names with relevant text you have retrieved about them from oracle_text or rulings. "
-        "For example, replace a creature's name with creature or its subtypes. Replace a spell like murder with its effect of destroy a creature.",
-        args_schema=RulesRetrievalInput
-    )
+            if rule_data['children']:
+                response += "Sub-rules:\n"
+                for child in rule_data['children']:
+                    response += f"- {child['rule_number']}: {child['content']}\n"
+            else:
+                response += "No sub-rules found.\n"
+            
+            responses.append(response)
+    
+    full_response = "\n\n".join(responses)
+    print(f"Rules lookup full response:\n{full_response}")  # Debug print
+    return full_response
 
 # Load the trained model and tokenizer
 model_path = "models/mtg_card_name_model"
@@ -152,10 +119,12 @@ If you believe a query has card names in it, use the recognize_card_names tool f
 
 b) Retrieval Rules Tool:
 For any part of the user's query that you're unsure about or need more information on, use the retrieve_relevant_rules tool to get relevant rules information. This tool will help you provide accurate and comprehensive answers.
-
-Then, break down the query into smaller, specific rules questions. Use the retrieve_relevant_rules tool multiple times, once for each specific rules question or game mechanic you need to clarify. For example, you might make separate calls for different card abilities, interactions, or game states mentioned in the query.
-To use the retrieval tool, first look at the glossary. This is a glossary whose full text you will be searching with a vector search. Think step by step to decide which rules will be helpful to answer the question and create queries that will look them up.
-
+You first assumption will be that you know nothing about the rules and card game.
+To use the retrieval tool, first look at the glossary. Decide which rule you need to know to answer the question, and look it up by rule number.
+For example, if a card says "Whenever creature attacks, destroy target creature", you might look up "Triggered Ability, "Targets", and "Declare Attackers Step."
+Always look up the rules for targeting if you have any effects that target.
+Always look up rule 405 the stack.
+Always look up all rules on all phases.
 Use the retrieve_relevant_rules tool without card names, just the text of the rule, or the type of the card, for example "Whenever creature attacks" instead of "whever Satya attacks".
 
 Glossary:
@@ -345,10 +314,28 @@ Example: A card reads "Each player sacrifices a creature." First, the active pla
 101.4e If multiple players would make choices or take actions while starting the game, the starting player is considered the active player and each other player is considered a nonactive player.
 
 4. Answering User's Query:
-Think step by step when evaluataing final input aand remember that Magic:the Gathering is a game where exact wording and technicalities matter, so be precise in your evaluation.
+Forget any information that has to do with the order of execution of things that the user has told you.
+Reconstruct the order based on the board state they have described.
+Think step by step when evaluataing final input and remember that Magic:the Gathering is a game where exact wording and technicalities matter, so be precise in your evaluation.
 
-After gathering all necessary information, provide a clear and concise answer to the user's question.
-
+After gathering all necessary information, use the information to answer the question and defend your answer. It must be answered only with the information you retrieved, otherwise you will look up more information until you know the answer.
+### ANSWERING A QUESTION ###
+YOU ARE A MAGIC: THE GATHERING RULES ENGINE.
+To answer a quesstion, you must have a full understanding of the state of the game. What abilities are on the stack? What phases are the players in? What abilities have resolved? You must think step by step, like a game engine.
+Decide what is the beginning of time for the purposes of the user's query. Describe your understanding of the board state at that time.
+REMEMBER THERE IS A DIFFERENCE BETWEEN WHEN AN ABILITY COMES ON THE STACK AND WHEN IT RESOLVES.
+AN ABILITY DOES NOT RESOLVE AT THE SAME TIME AS IT COMES ON THE STACK.
+WHEN AN ABILITY TRIGGERS, YOU CAAN SAY "ABILITY TRIGGERS, PLACING AN ABILITY ON THE STACK THAT DOES X"
+NOT "An ability triggers, doing X"
+Abilities triggered at the same time are placed on the stack at the same time.
+All targets for abilities must be chosen when the abilities are placed on the stack.
+Then, describe every event that happens as a game engine would. Describe when every ability goes on the stack. Describe when an ability resolves. Describe as players move through phases.
+Example: "You declare attackers, triggering 2 abilities. They both go on the stack. Ability one targets something. Ability 2 creates copies. We pick targets for triggered abilities. Now they resolve in reverse order that you chose to put them on stack.
+YOU ARE NOW A MAGIC: THE GATHERING JUDGE.
+As part of your output, tell me all rules you looked up and all sub-rules you used.
+Print out the FULL TEXT OF ALL INFORMATION YOU USED TO MAKE YOUR DECISION.
+This is the text for duke ulder ravenguard "
+At the beginning of combat on your turn, another target creature you control gains haste and myriad until end of turn. (Whenever it attacks, for each opponent other than defending player, you may create a token copy that's tapped and attacking that player or a planeswalker they control. Exile the tokens at end of combat.)"
 Remember, you are a judge, so defer to the rules to make the decision. The person asking the question is only a player and may have given you bad information based on their flawed understanding. Use the rules and tools you have to answer the question.
 """),
         HumanMessagePromptTemplate.from_template("{input}"),
@@ -371,14 +358,11 @@ Remember, you are a judge, so defer to the rules to make the decision. The perso
 def main():
     cards_file_path = 'data/oracle-cards-20240722210341.json'
     rulings_file_path = 'data/rulings-20240901210034.json'
-    rules_file_path = 'data/official-rules.txt'
-    glossary_file_path = 'data/glossary.txt'
     
     database_path = "db/mtg_cards.sqlite"
     cards_vector_store_path = "db/chroma_db_cards"
-    rules_glossary_vector_store_path = "db/chroma_db_rules_glossary"
 
-    file_paths = [cards_file_path, rulings_file_path, rules_file_path, glossary_file_path]
+    file_paths = [cards_file_path, rulings_file_path]
     if not all(os.path.exists(path) for path in file_paths):
         logger.error("One or more required files not found.")
         return
@@ -399,35 +383,34 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    rules_glossary_vector_store = create_or_load_vector_store(
-        rules_glossary_vector_store_path, 
-        embeddings, 
-        process_rules_and_glossary_data,
-        [rules_file_path, glossary_file_path]
-    )
-
     # Create the tools
     card_name_tool = create_card_name_recognition_tool()
-    rules_retrieval_tool = create_rules_retrieval_tool(rules_glossary_vector_store)
+    rules_lookup_tool = StructuredTool.from_function(
+        func=rules_lookup,
+        name="rules_lookup",
+        description="Look up multiple Magic: The Gathering rules by their numbers Use only integers which will retrieve the parent rule and all child rules, so if you want to find rule 505.2a you would lookup 505.",
+        args_schema=RulesLookupInput
+    )
 
     # Create the agent with both tools
-    llm = ChatOpenAI(temperature=0, model="gpt-4")
-    tools = [card_name_tool, rules_retrieval_tool]
+    llm = ChatOpenAI(temperature=0, model="gpt-4o")
+    tools = [card_name_tool, rules_lookup_tool]
     agent_executor = create_react_agent(llm, tools)
+    agent_executor.return_intermediate_steps = True  # Make sure this is set to True
 
     # Example queries
     example_queries = [
         "Does this sequencing work?\n"
         "[[Duke Ulder Ravenguard]], [[Taranika, Akroan Veteran]], [[Bounty Agent]] are on the board. Combat happens, and Duke will trigger, targeting the Bounty Agent. Myriad would trigger, creating copies of Bounty Agent attacking each opponent. Taranika would then trigger to target one of the copies of Bounty Agent. Can you then tap that copy of Bounty Agent to trigger activated ability?"
     ]
+    #     example_queries = [
+    #   "Combat happens, and Duke Ulder Ravenguard will trigger, targeting the Bounty Agent. I declare attackers with Bounty Agent and Taranika, Akroan Veteran. Can I untap a copy of Bounty Agent with Taranika's trigger?"
+    # ]
 
     for query in example_queries:
         print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
         result = agent_executor.invoke({"input": query})
         print(f"Agent response: {result['output']}")
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
