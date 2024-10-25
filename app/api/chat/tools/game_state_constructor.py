@@ -2,14 +2,18 @@ from langchain.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 import json
+from pydantic import BaseModel, Field
+
 
 class GameStateConstructor(BaseTool):
     name = "game_state_constructor"
-    description = "Constructs a detailed representation of the Magic: The Gathering game state from the user's query"
+    description = "Constructs a detailed representation of the Magic: The Gathering game state from the user's query. Use this if query involves complicatedchanges in game state."
+    model: ChatOpenAI = Field(default_factory=lambda: ChatOpenAI(model_name='gpt-4', temperature=0))
+
 
     def __init__(self):
         super().__init__()
-        self.model = ChatOpenAI(model_name='gpt-4', temperature=0)
+        self.model = ChatOpenAI(model_name='gpt-4o', temperature=0)
 
     def _run(self, query: str) -> str:
         game_state = self.construct_game_state(query)
@@ -591,47 +595,6 @@ STATE 4 TRIGGERED ABILITY OF PONDER CREATURE RESOLVES
 }
 
 STATE 5 COPY OF PONDER RESOLVES
-{
-    battlefield: ["Face-down ponder creature", "Face-down fork creature"],
-    stack: []
-    step: "combat damage"
-}
-
-SCENARIO 2
-STATE 1 COMBAT DAMAGE DEALT
-{
-    battlefield: ["Face-down ponder creature", "Face-down fork creature"],
-    stack: ["Triggered ability of Face-down fork creature", "Triggered ability of Face-down ponder creature"]
-    step: "combat damage"
-}
-
-STATE 2 TRIGGERED ABILITY OF PONDER CREATURE RESOLVES
-{
-    battlefield: ["Face down ponder creature", "Face down fork creature"],
-    stack: ["Triggered ability of Face down Fork creature", "Copy of Ponder"]
-    step: "combat damage"
-}
-
-STATE 3 COPY OF PONDER RESOLVES
-{
-    battlefield: ["Face down ponder creature", "Face down fork creature"],
-    stack: ["Triggered ability of Face down fork creature"]
-    step: "combat damage"
-}
-
-STATE 4 TRIGGERED ABILITY OF FORK CREATURE RESOLVES
-{
-    battlefield: ["Face down ponder creature", "Face down fork creature"],
-    stack: ["Copy of Fork"]
-    step: "combat damage"
-}
-
-STATE 5 COPY OF FORK RESOLVES
-{
-    battlefield: ["Face-down ponder creature", "Face-down fork creature"],
-    stack: []
-    step: "combat damage"
-}
 
 
                 Provide a JSON representation, using logical defaults where needed. Be detailed and accurate."""

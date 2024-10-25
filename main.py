@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List
+from typing import List, Dict, Any
 import json
 from transformers import AutoModelForTokenClassification, PreTrainedTokenizerFast
 from langchain.agents import AgentExecutor, OpenAIFunctionsAgent
@@ -16,6 +16,8 @@ from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
 from config import load_api_key
 from rules_api import get_rule_and_children
+from app.api.chat.tools.tools import get_tools
+from app.api.chat.tools.game_state_constructor import GameStateConstructor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -319,6 +321,10 @@ Reconstruct the order based on the board state they have described.
 Think step by step when evaluataing final input and remember that Magic:the Gathering is a game where exact wording and technicalities matter, so be precise in your evaluation.
 
 After gathering all necessary information, use the information to answer the question and defend your answer. It must be answered only with the information you retrieved, otherwise you will look up more information until you know the answer.
+
+5. Using the Game State Constructor:
+Before answering any question, use the game_state_constructor tool to create a detailed representation of the game state based on the user's description. Use this game state as the foundation for your reasoning and decision-making process.
+
 ### ANSWERING A QUESTION ###
 YOU ARE A MAGIC: THE GATHERING RULES ENGINE.
 To answer a quesstion, you must have a full understanding of the state of the game. What abilities are on the stack? What phases are the players in? What abilities have resolved? You must think step by step, like a game engine.
@@ -383,7 +389,18 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    # Create the tools
+    # Get all tools
+    tools = get_tools()
+
+    # Add GameStateConstructor tool
+    game_state_constructor = GameStateConstructor()
+    tools.append(Tool(
+        name="game_state_constructor",
+        func=game_state_constructor.run,
+        description=game_state_constructor.description
+    ))
+
+    # Add other tools
     card_name_tool = create_card_name_recognition_tool()
     rules_lookup_tool = StructuredTool.from_function(
         func=rules_lookup,
@@ -392,20 +409,18 @@ def main():
         args_schema=RulesLookupInput
     )
 
-    # Create the agent with both tools
-    llm = ChatOpenAI(temperature=0, model="gpt-4o")
-    tools = [card_name_tool, rules_lookup_tool]
+    # tools.extend([card_name_tool, rules_lookup_tool])
+
+    # Create the agent with all tools
+    llm = ChatOpenAI(temperature=0, model="gpt-4")
     agent_executor = create_react_agent(llm, tools)
-    agent_executor.return_intermediate_steps = True  # Make sure this is set to True
+    agent_executor.return_intermediate_steps = True
 
     # Example queries
     example_queries = [
         "Does this sequencing work?\n"
         "[[Duke Ulder Ravenguard]], [[Taranika, Akroan Veteran]], [[Bounty Agent]] are on the board. Combat happens, and Duke will trigger, targeting the Bounty Agent. Myriad would trigger, creating copies of Bounty Agent attacking each opponent. Taranika would then trigger to target one of the copies of Bounty Agent. Can you then tap that copy of Bounty Agent to trigger activated ability?"
     ]
-    #     example_queries = [
-    #   "Combat happens, and Duke Ulder Ravenguard will trigger, targeting the Bounty Agent. I declare attackers with Bounty Agent and Taranika, Akroan Veteran. Can I untap a copy of Bounty Agent with Taranika's trigger?"
-    # ]
 
     for query in example_queries:
         print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
