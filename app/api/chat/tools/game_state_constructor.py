@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class GameStateConstructor(BaseTool):
-    name = "game_state_constructor"
-    description = "Constructs a detailed representation of the Magic: The Gathering game state from the user's query. Use this if query involves complicatedchanges in game state."
+    name: str = "game_state_constructor"
+    description: str = "Constructs a detailed representation of the Magic: The Gathering game state from the user's query. Use this if query involves complicatedchanges in game state."
     model: ChatOpenAI = Field(default_factory=lambda: ChatOpenAI(model_name='gpt-4', temperature=0))
 
 

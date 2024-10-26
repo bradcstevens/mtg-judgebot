@@ -16,7 +16,6 @@ from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store, create_retriever
 from config import load_api_key
 from rules_api import get_rule_and_children
-from app.api.chat.tools.tools import get_tools
 from app.api.chat.tools.game_state_constructor import GameStateConstructor
 
 logging.basicConfig(level=logging.INFO)
@@ -390,7 +389,7 @@ def main():
     )
 
     # Get all tools
-    tools = get_tools()
+    tools = []
 
     # Add GameStateConstructor tool
     game_state_constructor = GameStateConstructor()
@@ -409,7 +408,7 @@ def main():
         args_schema=RulesLookupInput
     )
 
-    # tools.extend([card_name_tool, rules_lookup_tool])
+    tools.extend([card_name_tool, rules_lookup_tool])
 
     # Create the agent with all tools
     llm = ChatOpenAI(temperature=0, model="gpt-4")
