@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Dict, Any
+from typing import List
 import json
 from transformers import AutoModelForTokenClassification, PreTrainedTokenizerFast
 from langchain.agents import AgentExecutor, OpenAIFunctionsAgent
@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from mtg_cards_api import fetch_card_by_name
 from data_processor import process_cards_for_database, prepare_cards_for_vector_store
 from embeddings import initialize_embeddings
-from vector_store import create_vector_store, load_vector_store, create_retriever
+from vector_store import create_vector_store, load_vector_store
 from config import load_api_key
 from rules_api import get_rule_and_children
 from app.api.chat.tools.game_state_constructor import GameStateConstructor

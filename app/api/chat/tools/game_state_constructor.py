@@ -2,7 +2,7 @@ from langchain.tools import BaseTool
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage, SystemMessage
 import json
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 
 class GameStateConstructor(BaseTool):
