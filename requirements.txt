@@ -14,3 +14,5 @@ argparse
 numpy
 chromadb
 urllib3>=2.0.0
+pydantic
+langgraph
