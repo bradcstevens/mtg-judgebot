@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List
+from typing import List, Optional, TypedDict, Union, Sequence, Annotated
 import json
 from transformers import AutoModelForTokenClassification, PreTrainedTokenizerFast
 from langchain.agents import AgentExecutor, OpenAIFunctionsAgent
@@ -9,6 +9,7 @@ from langchain.schema import SystemMessage
 from langchain.tools import Tool, StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
+from langgraph.graph import END, START, StateGraph
 
 from mtg_cards_api import fetch_card_by_name
 from data_processor import process_cards_for_database, prepare_cards_for_vector_store
@@ -25,6 +26,13 @@ database_path = "db/mtg_cards.sqlite"
 
 class CardNameRecognitionInput(BaseModel):
     card_names: List[str] = Field(..., description="List of Magic: The Gathering card names to analyze")
+
+class GraphState(TypedDict):
+    question: str
+    card_names: Optional[List[str]]
+    rules: Optional[str]
+    game_state: Optional[str]
+    response: Optional[str]
 
 def create_card_name_recognition_tool():
     def recognize_card_names(card_names):
@@ -360,6 +368,58 @@ Remember, you are a judge, so defer to the rules to make the decision. The perso
         return_intermediate_steps=True
     )
 
+def card_name_recognition(state: GraphState) -> GraphState:
+    card_name_tool = create_card_name_recognition_tool()
+    result = card_name_tool.run(state["question"])
+    state["card_names"] = json.loads(result)
+    return state
+
+def rules_lookup(state: GraphState) -> GraphState:
+    rules_lookup_tool = StructuredTool.from_function(
+        func=rules_lookup,
+        name="rules_lookup",
+        description="Look up multiple Magic: The Gathering rules by their numbers",
+        args_schema=RulesLookupInput
+    )
+    # For simplicity, let's assume we're looking up rule 100
+    result = rules_lookup_tool.run(["100"])
+    state["rules"] = result
+    return state
+
+def game_state_construction(state: GraphState) -> GraphState:
+    game_state_constructor = GameStateConstructor()
+    result = game_state_constructor.run(state["question"])
+    state["game_state"] = result
+    return state
+
+def agent_execution(state: GraphState) -> Union[GraphState, Sequence[Annotated[GraphState, "final_answer"]]]:
+    llm = ChatOpenAI(temperature=0, model="gpt-4")
+    tools = [
+        create_card_name_recognition_tool(),
+        StructuredTool.from_function(
+            func=rules_lookup,
+            name="rules_lookup",
+            description="Look up multiple Magic: The Gathering rules by their numbers",
+            args_schema=RulesLookupInput
+        ),
+        Tool(
+            name="game_state_constructor",
+            func=GameStateConstructor().run,
+            description=GameStateConstructor().description
+        )
+    ]
+    agent_executor = create_react_agent(llm, tools)
+    
+    result = agent_executor.invoke({
+        "input": state["question"],
+        "card_names": state["card_names"],
+        "rules": state["rules"],
+        "game_state": state["game_state"]
+    })
+    
+    state["response"] = result["output"]
+    return [state]
+
 def main():
     cards_file_path = 'data/oracle-cards-20240722210341.json'
     rulings_file_path = 'data/rulings-20240901210034.json'
@@ -388,32 +448,20 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    # Get all tools
-    tools = []
+    workflow = StateGraph(GraphState)
 
-    # Add GameStateConstructor tool
-    game_state_constructor = GameStateConstructor()
-    tools.append(Tool(
-        name="game_state_constructor",
-        func=game_state_constructor.run,
-        description=game_state_constructor.description
-    ))
+    workflow.add_node("card_name_recognition", card_name_recognition)
+    workflow.add_node("rules_lookup", rules_lookup)
+    workflow.add_node("game_state_construction", game_state_construction)
+    workflow.add_node("agent_execution", agent_execution)
 
-    # Add other tools
-    card_name_tool = create_card_name_recognition_tool()
-    rules_lookup_tool = StructuredTool.from_function(
-        func=rules_lookup,
-        name="rules_lookup",
-        description="Look up multiple Magic: The Gathering rules by their numbers Use only integers which will retrieve the parent rule and all child rules, so if you want to find rule 505.2a you would lookup 505.",
-        args_schema=RulesLookupInput
-    )
+    workflow.set_entry_point("card_name_recognition")
+    workflow.add_edge("card_name_recognition", "rules_lookup")
+    workflow.add_edge("rules_lookup", "game_state_construction")
+    workflow.add_edge("game_state_construction", "agent_execution")
+    workflow.add_edge("agent_execution", END)
 
-    tools.extend([card_name_tool, rules_lookup_tool])
-
-    # Create the agent with all tools
-    llm = ChatOpenAI(temperature=0, model="gpt-4")
-    agent_executor = create_react_agent(llm, tools)
-    agent_executor.return_intermediate_steps = True
+    app = workflow.compile()
 
     # Example queries
     example_queries = [
@@ -423,8 +471,8 @@ def main():
 
     for query in example_queries:
         print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
-        result = agent_executor.invoke({"input": query})
-        print(f"Agent response: {result['output']}")
+        result = app.invoke({"question": query})
+        print(f"Agent response: {result['response']}")
 
 if __name__ == "__main__":
     main()
