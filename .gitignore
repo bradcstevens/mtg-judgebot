@@ -5,6 +5,7 @@ commands.txt
 glossary.txt
 *pycache*
 .env.local
+.env
 chroma_db*
 *.sqlite
 *.dump

@@ -374,7 +374,7 @@ def card_name_recognition(state: GraphState) -> GraphState:
     state["card_names"] = json.loads(result)
     return state
 
-def rules_lookup(state: GraphState) -> GraphState:
+def rules_lookup_node(state: GraphState) -> GraphState:
     rules_lookup_tool = StructuredTool.from_function(
         func=rules_lookup,
         name="rules_lookup",
@@ -451,7 +451,7 @@ def main():
     workflow = StateGraph(GraphState)
 
     workflow.add_node("card_name_recognition", card_name_recognition)
-    workflow.add_node("rules_lookup", rules_lookup)
+    workflow.add_node("rules_lookup", rules_lookup_node)
     workflow.add_node("game_state_construction", game_state_construction)
     workflow.add_node("agent_execution", agent_execution)
 
