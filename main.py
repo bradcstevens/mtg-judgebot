@@ -11,12 +11,12 @@ from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 from langgraph.graph import END, START, StateGraph
 
-from mtg_cards_api import fetch_card_by_name
+from my_agent.utils.api.mtg_cards_api import fetch_card_by_name
 from data_processor import process_cards_for_database, prepare_cards_for_vector_store
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store
 from config import load_api_key
-from rules_api import get_rule_and_children
+from my_agent.utils.api.rules_api import get_rule_and_children
 from app.api.chat.tools.game_state_constructor import GameStateConstructor
 
 logging.basicConfig(level=logging.INFO)
