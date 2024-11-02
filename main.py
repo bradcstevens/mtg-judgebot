@@ -9,14 +9,13 @@ from langchain.schema import SystemMessage
 from langchain.tools import Tool, StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
-from langgraph.graph import END, START, StateGraph
 
-from my_agent.utils.api.mtg_cards_api import fetch_card_by_name
+from mtg_cards_api import fetch_card_by_name
 from data_processor import process_cards_for_database, prepare_cards_for_vector_store
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store
 from config import load_api_key
-from my_agent.utils.api.rules_api import get_rule_and_children
+from rules_api import get_rule_and_children
 from app.api.chat.tools.game_state_constructor import GameStateConstructor
 
 logging.basicConfig(level=logging.INFO)
@@ -448,20 +447,23 @@ def main():
         [cards_file_path, rulings_file_path]
     )
 
-    workflow = StateGraph(GraphState)
-
-    workflow.add_node("card_name_recognition", card_name_recognition)
-    workflow.add_node("rules_lookup", rules_lookup_node)
-    workflow.add_node("game_state_construction", game_state_construction)
-    workflow.add_node("agent_execution", agent_execution)
-
-    workflow.set_entry_point("card_name_recognition")
-    workflow.add_edge("card_name_recognition", "rules_lookup")
-    workflow.add_edge("rules_lookup", "game_state_construction")
-    workflow.add_edge("game_state_construction", "agent_execution")
-    workflow.add_edge("agent_execution", END)
-
-    app = workflow.compile()
+    # Create agent with tools
+    llm = ChatOpenAI(temperature=0, model="gpt-4")
+    tools = [
+        create_card_name_recognition_tool(),
+        StructuredTool.from_function(
+            func=rules_lookup,
+            name="rules_lookup",
+            description="Look up multiple Magic: The Gathering rules by their numbers",
+            args_schema=RulesLookupInput
+        ),
+        Tool(
+            name="game_state_constructor",
+            func=GameStateConstructor().run,
+            description=GameStateConstructor().description
+        )
+    ]
+    agent_executor = create_react_agent(llm, tools)
 
     # Example queries
     example_queries = [
@@ -471,8 +473,8 @@ def main():
 
     for query in example_queries:
         print(f"\n{'='*50}\nProcessing query: {query}\n{'='*50}")
-        result = app.invoke({"question": query})
-        print(f"Agent response: {result['response']}")
+        result = agent_executor.invoke({"input": query})
+        print(f"Agent response: {result['output']}")
 
 if __name__ == "__main__":
     main()
