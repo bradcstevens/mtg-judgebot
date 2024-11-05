@@ -4,6 +4,7 @@ pandas
 python-dotenv
 langchain_openai
 langchain_chroma
+langchain_community
 langchain>=0.0.350
 langchain_core>=0.1.0
 datasets

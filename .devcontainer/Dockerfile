@@ -40,3 +40,6 @@ USER $USERNAME
 
 # Set the default shell to bash
 ENV SHELL /bin/bash
+
+# Replace the RUN command that appends to pyproject.toml with a COPY
+COPY pyproject.toml /deps/__outer_my_agent/

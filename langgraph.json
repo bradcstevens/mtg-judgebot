@@ -3,6 +3,14 @@
   "graphs": {
     "agent": "./my_agent/agent.py:graph"
   },
-  "env": ".env"
-  
+  "env": ".env",
+  "dockerfile_lines": [
+    "RUN apt-get update && apt-get install -y sqlite3",
+    "RUN mkdir -p /deps/__outer_my_agent/my_agent/db",
+    "COPY ./my_agent /deps/__outer_my_agent/my_agent/",
+    "WORKDIR /deps/__outer_my_agent",
+    "ENV PYTHONPATH=/deps/__outer_my_agent",
+    "RUN python3 -c 'from my_agent.api.mtg_cards_api import setup_card_database; setup_card_database(\"/deps/__outer_my_agent/my_agent/db/mtg_cards.sqlite\")'",
+    "COPY ./my_agent/db/mtg_cards.sqlite /deps/__outer_my_agent/my_agent/db/"
+  ]
 }
