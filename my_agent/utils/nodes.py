@@ -13,19 +13,16 @@ tool_executor = ToolExecutor(tool_belt)
 
 from langchain_core.utils.function_calling import convert_to_openai_function
 
-model = ChatOpenAI(temperature=0)
-
 functions = [convert_to_openai_function(t) for t in tool_belt]
-model = model.bind_tools(functions)
+model = ChatOpenAI(
+    temperature=0,
+    model="gpt-4-turbo-preview"  # or gpt-3.5-turbo if preferred
+).bind_functions(functions)
 
 def call_model(state):
-    if "messages" not in state:
-        state["messages"] = []
-    
-    messages = state["messages"]
-    model = ChatOpenAI(temperature=0)
+    messages = state.get("messages", [])
     response = model.invoke(messages)
-    return {"messages" : [response]}
+    return {"messages": messages + [response]}
 
 from langgraph.prebuilt import ToolInvocation
 import json

@@ -14,6 +14,7 @@ class GraphConfig(TypedDict):
 class State(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     question: str
+    card_names: list
 
 def create_graph():
     workflow = StateGraph(State)
@@ -30,13 +31,13 @@ def create_graph():
         last_message = state["messages"][-1]
         if "function_call" not in last_message.additional_kwargs:
             return "end"
-        return "continue"
+        return "action"
 
     workflow.add_conditional_edges(
         "agent",
         should_continue,
         {
-            "continue": "action",
+            "action": "action",
             "end": END
         }
     )

@@ -59,7 +59,7 @@ def create_card_name_recognition_tool():
     return StructuredTool.from_function(
         func=recognize_card_names,
         name="recognize_card_names",
-        description="Recognize and log Magic: The Gathering card names...",
+        description="Pass this tool a list of Magic: The Gathering card names and it will return a list of card details including full text and rulings for the card's abilities. You should call this tool for each thing in user query that sounds like it could be a Magic: The Gathering card name or is being used in the query like a card name would be.",
         args_schema=CardNameRecognitionInput
     )
 
