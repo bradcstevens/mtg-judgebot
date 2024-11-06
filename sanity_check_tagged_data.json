@@ -1,0 +1,22 @@
+[
+    {
+        "tokens": ["What", "happens", "if", "I", "cast", "Lightning", "Bolt", "on", "a", "creature", "with", "hexproof", "?"],
+        "labels": ["O", "O", "O", "O", "O", "B-CARD", "I-CARD", "O", "O", "O", "O", "O", "O"]
+    },
+    {
+        "tokens": ["Can", "I", "use", "Counterspell", "to", "counter", "a", "spell", "with", "split", "second", "?"],
+        "labels": ["O", "O", "O", "B-CARD", "O", "O", "O", "O", "O", "O", "O"]
+    },
+    {
+        "tokens": ["Does", "Pithing", "Needle", "stop", "planeswalker", "abilities", "?"],
+        "labels": ["O", "B-CARD", "I-CARD", "O", "O", "O", "O"]
+    },
+    {
+        "tokens": ["What", "is", "the", "interaction", "between", "Rest", "in", "Peace", "and", "Leyline", "of", "the", "Void", "?"],
+        "labels": ["O", "O", "O", "O", "O", "B-CARD", "I-CARD", "O", "B-CARD", "I-CARD", "O", "O", "O", "O"]
+    },
+    {
+        "tokens": ["Can", "I", "activate", "Aether", "Vial", "in", "response", "to", "a", "spell", "?"],
+        "labels": ["O", "O", "O", "B-CARD", "I-CARD", "O", "O", "O", "O", "O", "O"]
+    }
+]

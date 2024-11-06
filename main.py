@@ -10,12 +10,12 @@ from langchain.tools import Tool, StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel, Field
 
-from api.mtg_cards_api import fetch_card_by_name
+from my_agent.api.mtg_cards_api import fetch_card_by_name
 from data_processor import process_cards_for_database, prepare_cards_for_vector_store
 from embeddings import initialize_embeddings
 from vector_store import create_vector_store, load_vector_store
 from config import load_api_key
-from api.rules_api import get_rule_and_children
+from my_agent.api.rules_api import get_rule_and_children
 from app.api.chat.tools.game_state_constructor import GameStateConstructor
 
 logging.basicConfig(level=logging.INFO)
@@ -392,7 +392,7 @@ def game_state_construction(state: GraphState) -> GraphState:
     return state
 
 def agent_execution(state: GraphState) -> Union[GraphState, Sequence[Annotated[GraphState, "final_answer"]]]:
-    llm = ChatOpenAI(temperature=0, model="gpt-4")
+    llm = ChatOpenAI(temperature=0, model="gpt-4o")
     tools = [
         create_card_name_recognition_tool(),
         StructuredTool.from_function(
@@ -420,10 +420,10 @@ def agent_execution(state: GraphState) -> Union[GraphState, Sequence[Annotated[G
     return [state]
 
 def main():
-    cards_file_path = 'data/oracle-cards-20240722210341.json'
-    rulings_file_path = 'data/rulings-20240901210034.json'
+    cards_file_path = 'data/oracle-cards-20241105220317.json'
+    rulings_file_path = 'data/rulings-20241105220032.json'
     
-    database_path = "db/mtg_cards.sqlite"
+    database_path = "db/mtg_cards.sqlite" 
     cards_vector_store_path = "db/chroma_db_cards"
 
     file_paths = [cards_file_path, rulings_file_path]
@@ -448,7 +448,7 @@ def main():
     )
 
     # Create agent with tools
-    llm = ChatOpenAI(temperature=0, model="gpt-4")
+    llm = ChatOpenAI(temperature=0, model="gpt-4o")
     tools = [
         create_card_name_recognition_tool(),
         StructuredTool.from_function(

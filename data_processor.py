@@ -1,7 +1,7 @@
 from typing import List, Dict, Any
 import logging
 from card_processor import process_cards_and_rulings
-from api.mtg_cards_api import setup_card_database, insert_card_into_db, insert_ruling_into_db
+from my_agent.api.mtg_cards_api import setup_card_database, insert_card_into_db, insert_ruling_into_db
 
 logger = logging.getLogger(__name__)
 

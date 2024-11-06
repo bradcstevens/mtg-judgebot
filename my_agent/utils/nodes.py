@@ -16,7 +16,7 @@ from langchain_core.utils.function_calling import convert_to_openai_function
 functions = [convert_to_openai_function(t) for t in tool_belt]
 model = ChatOpenAI(
     temperature=0,
-    model="gpt-4-turbo-preview"  # or gpt-3.5-turbo if preferred
+    model="gpt-4o"  # or gpt-3.5-turbo if preferred
 ).bind_functions(functions)
 
 def call_model(state):

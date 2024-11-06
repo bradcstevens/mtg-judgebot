@@ -92,7 +92,7 @@ def process_cards(file_path: str) -> List[Dict]:
     return processed_cards
 
 # Usage
-file_path = './data/oracle-cards-20240722210341.json'
+file_path = './data/oracle-cards-20241105220317.json'
 cards = process_cards(file_path)
 
 # Print the first few processed cards
